@@ -1,127 +1,140 @@
-#include <assert.h>
-#include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 #include <omp.h>
 
-#define TASK_SIZE 100000
+#define SWAP(a,b) {int temp = a; a = b; b = temp;}
 
-unsigned int rand_interval(unsigned int min, unsigned int max)
-{
-    // https://stackoverflow.com/questions/2509679/
-    int r;
-    const unsigned int range = 1 + max - min;
-    const unsigned int buckets = RAND_MAX / range;
-    const unsigned int limit = buckets * range;
+#define SIZE 104857
 
-    do
-    {
-        r = rand();
-    } while (r >= limit);
+void setUp(int a[], int size);
+void tearDown(double start, double end, int a[], int size);
+void merge(int a[], int size, int temp[]);
+void mergesort_serial(int a[], int size, int temp[]);
+void mergesort_parallel_omp
+(int a[], int size, int temp[], int threads);
 
-    return min + (r / buckets);
-}
+int main() {
+	int a[SIZE];
+	int temp[SIZE];
+	double startTime, endTime;
+	int num_threads;
 
-void fillupRandomly(int* m, int size, unsigned int min, unsigned int max) {
-    for (int i = 0; i < size; i++)
-        m[i] = rand_interval(min, max);
-}
-
-void mergeSortAux(int* X, int n, int* tmp) {
-    int i = 0;
-    int j = n / 2;
-    int ti = 0;
-
-    while (i < n / 2 && j < n) {
-        if (X[i] < X[j]) {
-            tmp[ti] = X[i];
-            ti++; i++;
-        }
-        else {
-            tmp[ti] = X[j];
-            ti++; j++;
-        }
-    }
-    while (i < n / 2) { /* finish up lower half */
-        tmp[ti] = X[i];
-        ti++; i++;
-    }
-    while (j < n) { /* finish up upper half */
-        tmp[ti] = X[j];
-        ti++; j++;
-    }
-    memcpy(X, tmp, n * sizeof(int));
-}
-
-void mergeSort(int* X, int n, int* tmp)
-{
-    if (n < 2) return;
-
-#pragma omp task shared(X) if (n > TASK_SIZE)
-    mergeSort(X, n / 2, tmp);
-
-#pragma omp task shared(X) if (n > TASK_SIZE)
-    mergeSort(X + (n / 2), n - (n / 2), tmp + n / 2);
-
-#pragma omp taskwait
-    mergeSortAux(X, n, tmp);
-}
-
-void init(int* a, int size) {
-    for (int i = 0; i < size; i++)
-        a[i] = 0;
-}
-
-void printArray(int* a, int size) {
-    for (int i = 0; i < size; i++)
-        printf("%d ", a[i]);
-    printf("\n");
-}
-
-int isSorted(int* a, int size) {
-    for (int i = 0; i < size - 1; i++)
-        if (a[i] > a[i + 1])
-            return 0;
-    return 1;
-}
-
-int main(int argc, char* argv[]) {
-    srand(123456);
-    int N = (argc > 1) ? atoi(argv[1]) : 10;
-    int print = (argc > 2) ? atoi(argv[2]) : 0;
-    int numThreads = (argc > 3) ? atoi(argv[3]) : 2;
-    int* X = malloc(N * sizeof(int));
-    int* tmp = malloc(N * sizeof(int));
-
-    omp_set_dynamic(0);              /** Explicitly disable dynamic teams **/
-    omp_set_num_threads(numThreads); /** Use N threads for all parallel regions **/
-
-     // Dealing with fail memory allocation
-    if (!X || !tmp)
-    {
-        if (X) free(X);
-        if (tmp) free(tmp);
-        return (EXIT_FAILURE);
-    }
-
-    fillupRandomly(X, N, 0, 5);
-
-    double begin = omp_get_wtime();
 #pragma omp parallel
-    {
-#pragma omp single
-        mergeSort(X, N, tmp);
-    }
-    double end = omp_get_wtime();
-    printf("Time: %f (s) \n", end - begin);
+	{
+#pragma omp master
+		{
+			num_threads = omp_get_num_threads();
+		}
+	}
 
-    assert(1 == isSorted(X, N));
+	setUp(a, SIZE);
 
-    if (print) {
-        printArray(X, N);
-    }
 
-    free(X);
-    free(tmp);
-    return (EXIT_SUCCESS);
+
+	startTime = omp_get_wtime();
+	mergesort_parallel_omp(a, SIZE, temp, num_threads);
+	endTime = omp_get_wtime();
+
+	tearDown(startTime, endTime, a, SIZE);
+}
+
+void setUp(int a[], int size) {
+	int i;
+
+	srand(time(NULL));
+	for (i = 0; i < size; ++i) {
+		a[i] = rand() % size;
+	}
+	return;
+}
+
+void tearDown(double start, double end, int a[], int size) {
+	int sorted = 1;
+	int i;
+
+	printf("Time to execute: %f\n", end - start);
+
+	for (i = 0; i < size - 1; ++i) {
+		sorted &= (a[i] <= a[i + 1]);
+	}
+
+	printf("Array sorted: %d\n", sorted);
+
+#pragma omp parallel
+	{
+#pragma omp master
+		{
+			printf("Num threads: %d\n", omp_get_num_threads());
+		}
+	}
+}
+
+void merge(int a[], int size, int temp[]) {
+	int i1 = 0;
+	int i2 = size / 2;
+	int it = 0;
+
+	while (i1 < size / 2 && i2 < size) {
+		if (a[i1] <= a[i2]) {
+			temp[it] = a[i1];
+			i1 += 1;
+		}
+		else {
+			temp[it] = a[i2];
+			i2 += 1;
+		}
+		it += 1;
+	}
+
+	while (i1 < size / 2) {
+		temp[it] = a[i1];
+		i1++;
+		it++;
+	}
+	while (i2 < size) {
+		temp[it] = a[i2];
+		i2++;
+		it++;
+	}
+
+	memcpy(a, temp, size * sizeof(int));
+
+}
+
+void mergesort_serial(int a[], int size, int temp[]) {
+	int i;
+
+	if (size == 2) {
+		if (a[0] <= a[1])
+			return;
+		else {
+			SWAP(a[0], a[1]);
+			return;
+		}
+	}
+
+	mergesort_serial(a, size / 2, temp);
+	mergesort_serial(a + size / 2, size - size / 2, temp);
+	merge(a, size, temp);
+}
+
+void mergesort_parallel_omp
+(int a[], int size, int temp[], int threads) {
+	if (threads == 1) {
+		mergesort_serial(a, size, temp);
+	}
+	else if (threads > 1) {
+#pragma omp parallel sections
+		{
+#pragma omp section
+			mergesort_parallel_omp(a, size / 2, temp, threads / 2);
+#pragma omp section
+			mergesort_parallel_omp(a + size / 2, size - size / 2,
+				temp + size / 2, threads - threads / 2);
+		}
+
+		merge(a, size, temp);
+	} // threads > 1
 }
