@@ -1,31 +1,33 @@
-#include <stdio.h>
+#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
-#include "omp.h"
+#include <stdio.h>
+#include <omp.h>
 
-#define MAX_SIZE 1000000
+#define TASK_SIZE 100000
 
+unsigned int rand_interval(unsigned int min, unsigned int max)
+{
+    // https://stackoverflow.com/questions/2509679/
+    int r;
+    const unsigned int range = 1 + max - min;
+    const unsigned int buckets = RAND_MAX / range;
+    const unsigned int limit = buckets * range;
 
-void generate_list(int* x, int n) {
-    int i, j, t;
-    for (i = 0; i < n; i++)
-        x[i] = i;
-    for (i = 0; i < n; i++) {
-        j = rand() % n;
-        t = x[i];
-        x[i] = x[j];
-        x[j] = t;
-    }
+    do
+    {
+        r = rand();
+    } while (r >= limit);
+
+    return min + (r / buckets);
 }
 
-void print_list(int* x, int n) {
-    int i;
-    for (i = 0; i < n; i++) {
-        printf("%d ", x[i]);
-    }
+void fillupRandomly(int* m, int size, unsigned int min, unsigned int max) {
+    for (int i = 0; i < size; i++)
+        m[i] = rand_interval(min, max);
 }
 
-void merge(int* X, int n, int* tmp) {
+void mergeSortAux(int* X, int n, int* tmp) {
     int i = 0;
     int j = n / 2;
     int ti = 0;
@@ -49,42 +51,77 @@ void merge(int* X, int n, int* tmp) {
         ti++; j++;
     }
     memcpy(X, tmp, n * sizeof(int));
+}
 
-} // end of merge()
-
-void mergesort(int* X, int n, int* tmp)
+void mergeSort(int* X, int n, int* tmp)
 {
     if (n < 2) return;
 
-#pragma omp task firstprivate (X, n, tmp)
-    mergesort(X, n / 2, tmp);
+#pragma omp task shared(X) if (n > TASK_SIZE)
+    mergeSort(X, n / 2, tmp);
 
-#pragma omp task firstprivate (X, n, tmp)
-    mergesort(X + (n / 2), n - (n / 2), tmp);
+#pragma omp task shared(X) if (n > TASK_SIZE)
+    mergeSort(X + (n / 2), n - (n / 2), tmp + n / 2);
 
 #pragma omp taskwait
-
-    /* merge sorted halves into sorted list */
-    merge(X, n, tmp);
+    mergeSortAux(X, n, tmp);
 }
 
+void init(int* a, int size) {
+    for (int i = 0; i < size; i++)
+        a[i] = 0;
+}
 
-int main()
-{
-    int n = 1000000;
-    double start, stop;
+void printArray(int* a, int size) {
+    for (int i = 0; i < size; i++)
+        printf("%d ", a[i]);
+    printf("\n");
+}
 
-    int data[MAX_SIZE], tmp[MAX_SIZE];
+int isSorted(int* a, int size) {
+    for (int i = 0; i < size - 1; i++)
+        if (a[i] > a[i + 1])
+            return 0;
+    return 1;
+}
 
-    generate_list(data, n);
-    printf("List Before Sorting...\n");
-    start = omp_get_wtime();
+int main(int argc, char* argv[]) {
+    srand(123456);
+    int N = (argc > 1) ? atoi(argv[1]) : 10;
+    int print = (argc > 2) ? atoi(argv[2]) : 0;
+    int numThreads = (argc > 3) ? atoi(argv[3]) : 2;
+    int* X = malloc(N * sizeof(int));
+    int* tmp = malloc(N * sizeof(int));
+
+    omp_set_dynamic(0);              /** Explicitly disable dynamic teams **/
+    omp_set_num_threads(numThreads); /** Use N threads for all parallel regions **/
+
+     // Dealing with fail memory allocation
+    if (!X || !tmp)
+    {
+        if (X) free(X);
+        if (tmp) free(tmp);
+        return (EXIT_FAILURE);
+    }
+
+    fillupRandomly(X, N, 0, 5);
+
+    double begin = omp_get_wtime();
 #pragma omp parallel
     {
 #pragma omp single
-        mergesort(data, n, tmp);
+        mergeSort(X, N, tmp);
     }
-    stop = omp_get_wtime();
-    printf("\nList After Sorting...\n");
-    printf("\nTime: %g\n", stop - start);
+    double end = omp_get_wtime();
+    printf("Time: %f (s) \n", end - begin);
+
+    assert(1 == isSorted(X, N));
+
+    if (print) {
+        printArray(X, N);
+    }
+
+    free(X);
+    free(tmp);
+    return (EXIT_SUCCESS);
 }

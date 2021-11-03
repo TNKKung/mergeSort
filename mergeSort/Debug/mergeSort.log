@@ -1,2 +1,6 @@
 ﻿  Source.cpp
-  mergeSort.vcxproj -> C:\Developer\mergeSort\Debug\mergeSort.exe
+C:\Developer\mergeSort\mergeSort\Source.cpp(20,16): warning C4018: '>=': signed/unsigned mismatch
+C:\Developer\mergeSort\mergeSort\Source.cpp(93,37): error C2440: 'initializing': cannot convert from 'void *' to 'int *'
+C:\Developer\mergeSort\mergeSort\Source.cpp(93,12): message : Conversion from 'void*' to pointer to non-'void' requires an explicit cast
+C:\Developer\mergeSort\mergeSort\Source.cpp(94,39): error C2440: 'initializing': cannot convert from 'void *' to 'int *'
+C:\Developer\mergeSort\mergeSort\Source.cpp(94,14): message : Conversion from 'void*' to pointer to non-'void' requires an explicit cast
